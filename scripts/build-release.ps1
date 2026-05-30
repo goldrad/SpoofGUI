@@ -5,6 +5,8 @@ param(
     [string]$SingBoxVersion = "1.13.12",
     [string]$WintunVersion = "0.14.1",
     [switch]$SkipEngine,
+    [switch]$SkipFetch,
+    [switch]$PortableOnly,
     [string]$PythonExeAmd64 = "",
     [string]$PythonExeX86 = ""
 )
@@ -112,7 +114,7 @@ if (Get-Process -Name "SpoofGUI" -ErrorAction SilentlyContinue) {
     throw "SpoofGUI.exe is running. Close the app before building release packages."
 }
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw "dotnet SDK not found in PATH." }
-$iscc = Find-Iscc
+$iscc = if ($PortableOnly) { $null } else { Find-Iscc }
 
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
@@ -132,9 +134,11 @@ foreach ($a in $Arch) {
 
     Assert-Exists (Join-Path $engineDir "SpoofGUI.SniSpoofEngine.exe") "engine exe"
 
-    Get-Xray -ArchName $a
-    Get-SingBox -ArchName $a
-    Get-Wintun -ArchName $a
+    if (-not $SkipFetch) {
+        Get-Xray -ArchName $a
+        Get-SingBox -ArchName $a
+        Get-Wintun -ArchName $a
+    }
 
     Assert-Exists (Join-Path $xrayDir "xray.exe") "xray.exe"
     Assert-Exists (Join-Path $engineDir "sing-box.exe") "sing-box.exe"
@@ -166,6 +170,12 @@ foreach ($a in $Arch) {
     if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
     Compress-Archive -Path (Join-Path $stageArch "*") -DestinationPath $zipPath -CompressionLevel Optimal
     Write-Host "Portable: $zipPath"
+
+    if ($PortableOnly)
+    {
+        Write-Host "Setup skipped (-PortableOnly)"
+        continue
+    }
 
     $env:SPOOFGUI_VERSION = $Version
     $env:SPOOFGUI_ROOT = $root
