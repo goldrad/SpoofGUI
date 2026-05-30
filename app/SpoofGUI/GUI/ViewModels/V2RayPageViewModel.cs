@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using SpoofGUI.Core;
 using SpoofGUI.Database;
 using SpoofGUI.Engine;
@@ -14,14 +15,25 @@ public sealed class V2RayPageViewModel
     private readonly XrayCoreService _xray;
     private readonly SingBoxTunnelService _tunnel;
     private readonly ProxyPortSettings _ports;
+    private readonly AppSettings _appSettings;
 
-    public V2RayPageViewModel(V2RayProfileRepository profiles, XrayCoreService xray, SingBoxTunnelService tunnel, ProxyPortSettings ports)
+    public V2RayPageViewModel(V2RayProfileRepository profiles, XrayCoreService xray, SingBoxTunnelService tunnel, ProxyPortSettings ports, AppSettings appSettings)
     {
         _profiles = profiles;
         _xray = xray;
         _tunnel = tunnel;
         _ports = ports;
+        _appSettings = appSettings;
     }
+
+    public int V2RayModeIndex => _appSettings.V2RayMode switch
+    {
+        "Tunnel" => 1,
+        "SystemProxy" => 2,
+        _ => 0,
+    };
+
+    public void SetMode(string mode) => _appSettings.V2RayMode = mode;
 
     public bool TunnelRunning => _tunnel.IsRunning;
 
@@ -39,22 +51,64 @@ public sealed class V2RayPageViewModel
     public Task<bool> RefreshRunningAsync() => _xray.RefreshRunningAsync();
     public Task<string> CoreVersionAsync() => _xray.VersionAsync();
 
-    public V2RayProfile Import(string text, string mode)
+    public ImportResult ImportMany(string text, string mode)
     {
-        var profile = V2RayConfigParser.Parse(text);
-        profile.Mode = mode;
-        _profiles.Upsert(profile);
-        return profile;
+        var imported = new List<V2RayProfile>();
+        var failed = 0;
+        foreach (var entry in V2RayConfigParser.SplitConfigs(text))
+        {
+            try
+            {
+                var profile = V2RayConfigParser.Parse(entry);
+                profile.Mode = mode;
+                _profiles.Upsert(profile);
+                imported.Add(profile);
+            }
+            catch
+            {
+                failed++;
+            }
+        }
+
+        return new ImportResult(imported, failed);
     }
 
     public void Save(V2RayProfile profile) => _profiles.Upsert(profile);
     public void Delete(V2RayProfile profile) => _profiles.Delete(profile.Id);
     public Task StartAsync(V2RayProfile profile) => _xray.StartAsync(profile);
     public Task StopAsync() => _xray.StopAsync();
+    public Task<long> TestRealDelayAsync(V2RayProfile profile) => _xray.TestRealDelayAsync(profile);
 }
+
+public sealed record ImportResult(IReadOnlyList<V2RayProfile> Imported, int Failed);
 
 internal static class V2RayConfigParser
 {
+    private static readonly Regex ConfigScheme = new(
+        @"(?:vless|vmess|trojan|ssr|ss|socks5|socks|https|http|hysteria2|hysteria|hy2|tuic|wireguard|warp|naive|brook)://",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public static IReadOnlyList<string> SplitConfigs(string text)
+    {
+        var matches = ConfigScheme.Matches(text);
+        if (matches.Count == 0)
+        {
+            var single = text.Trim();
+            return single.Length > 0 ? new List<string> { single } : new List<string>();
+        }
+
+        var configs = new List<string>();
+        for (var i = 0; i < matches.Count; i++)
+        {
+            var start = matches[i].Index;
+            var end = i + 1 < matches.Count ? matches[i + 1].Index : text.Length;
+            var entry = text[start..end].Trim();
+            if (entry.Length > 0) configs.Add(entry);
+        }
+
+        return configs;
+    }
+
     public static V2RayProfile Parse(string text)
     {
         var raw = text.Trim();

@@ -1,7 +1,8 @@
 #define AppVersion GetEnv("SPOOFGUI_VERSION")
 #define RepoRoot GetEnv("SPOOFGUI_ROOT")
-#define SourceDir GetEnv("SPOOFGUI_PUBLISH_DIR")
+#define StageDir GetEnv("SPOOFGUI_STAGE_DIR")
 #define OutputDir GetEnv("SPOOFGUI_DIST_DIR")
+#define Arch GetEnv("SPOOFGUI_ARCH")
 
 [Setup]
 AppId={{E5398958-4C72-4EE0-9D52-D8EBC16E9739}
@@ -15,11 +16,15 @@ DefaultDirName={autopf}\SpoofGUI
 DefaultGroupName=SpoofGUI
 UninstallDisplayIcon={app}\SpoofGUI.exe
 OutputDir={#OutputDir}
-OutputBaseFilename=SpoofGUI-Setup
+OutputBaseFilename=SpoofGUI-Setup-{#Arch}
 Compression=lzma2/ultra64
 SolidCompression=yes
+#if Arch == "amd64"
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+#else
+ArchitecturesAllowed=x86compatible
+#endif
 PrivilegesRequired=admin
 WizardStyle=modern dark windows11 includetitlebar
 WizardBackColor=#1B1E25
@@ -28,7 +33,7 @@ DisableProgramGroupPage=yes
 LicenseFile={#RepoRoot}\LICENSE
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

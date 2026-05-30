@@ -52,4 +52,12 @@
         <Setter Property="Background" Value="{StaticResource BorderSubtle}" />
         <Setter Property="Margin" Value="0,16,0,16" />
     </Style>
+
+    <Style x:Key="Card" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource SurfaceRaised}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtle}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="24" />
+    </Style>
 </ResourceDictionary>

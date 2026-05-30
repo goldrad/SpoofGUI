@@ -11,6 +11,8 @@ public sealed partial class V2RayPage : Page
 {
     private readonly V2RayPageViewModel _vm;
     private V2RayProfile? _selected;
+    private bool _ready;
+    private bool _pinging;
     private bool _xrayRunning;
     private bool _systemProxyActive;
     private bool _tunnelActive;
@@ -25,6 +27,7 @@ public sealed partial class V2RayPage : Page
         Loaded += async (_, _) => await LoadAsync();
         Unloaded += (_, _) => _statsTimer.Stop();
         _statsTimer.Tick += (_, _) => UpdateStats();
+        _ready = true;
     }
 
     private void UpdateStats()
@@ -54,6 +57,7 @@ public sealed partial class V2RayPage : Page
 
     private async Task LoadAsync()
     {
+        ModeSelector.SelectedIndex = _vm.V2RayModeIndex;
         try
         {
             Reload();
@@ -88,6 +92,14 @@ public sealed partial class V2RayPage : Page
         _ => "Proxy",
     };
 
+    private string CurrentMode() => ModeFromIndex(ModeSelector.SelectedIndex);
+
+    private void OnModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_ready) return;
+        _vm.SetMode(CurrentMode());
+    }
+
     private void Reload()
     {
         var profiles = _vm.LoadProfiles();
@@ -104,11 +116,22 @@ public sealed partial class V2RayPage : Page
 
         try
         {
-            var mode = ModeFromIndex(ImportMode.SelectedIndex);
-            _selected = _vm.Import(ImportText.Text, mode);
-            ImportText.Text = "";
-            StatusText.Text = $"imported: {_selected.Name}";
-            Reload();
+            var result = _vm.ImportMany(ImportText.Text, CurrentMode());
+            if (result.Imported.Count == 0)
+            {
+                StatusText.Text = result.Failed > 0 ? $"import failed: {result.Failed} invalid config(s)" : "nothing to import";
+            }
+            else
+            {
+                _selected = result.Imported[^1];
+                ImportText.Text = "";
+                var summary = result.Imported.Count == 1
+                    ? $"imported: {_selected.Name}"
+                    : $"imported {result.Imported.Count} configs";
+                if (result.Failed > 0) summary += $" ({result.Failed} skipped)";
+                StatusText.Text = summary;
+                Reload();
+            }
         }
         catch (Exception ex)
         {
@@ -134,7 +157,8 @@ public sealed partial class V2RayPage : Page
         ConnectButton.IsEnabled = false;
         SetConnecting(true);
 
-        if (string.Equals(_selected.Mode, "Tunnel", StringComparison.OrdinalIgnoreCase))
+        var mode = CurrentMode();
+        if (string.Equals(mode, "Tunnel", StringComparison.OrdinalIgnoreCase))
         {
             StatusText.Text = "connecting… (sing-box tunnel)";
             try
@@ -165,7 +189,7 @@ public sealed partial class V2RayPage : Page
             _xrayRunning = true;
             _sampler.Reset();
             _connectedAt = DateTime.UtcNow;
-            if (string.Equals(_selected.Mode, "SystemProxy", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(mode, "SystemProxy", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
@@ -279,26 +303,10 @@ public sealed partial class V2RayPage : Page
         var security = Field("Security", profile.Security);
         var transport = Field("Transport", profile.Transport);
         var serverName = Field("SNI", profile.ServerName);
-        var modeIdx = profile.Mode.Equals("SystemProxy", StringComparison.OrdinalIgnoreCase) ? 2
-            : profile.Mode.Equals("Tunnel", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-
-        var mode = new ComboBox();
-        mode.Items.Add(new ComboBoxItem { Content = "Proxy" });
-        mode.Items.Add(new ComboBoxItem { Content = "Tunnel" });
-        mode.Items.Add(new ComboBoxItem { Content = "SystemProxy" });
-        mode.SelectedIndex = modeIdx;
-        var modeContainer = new StackPanel();
-        modeContainer.Children.Add(new TextBlock
-        {
-            Text = "Mode",
-            Style = (Style)Application.Current.Resources["FieldLabel"],
-        });
-        modeContainer.Children.Add(mode);
 
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(name.Container);
         panel.Children.Add(protocol.Container);
-        panel.Children.Add(modeContainer);
         panel.Children.Add(address.Container);
         panel.Children.Add(port.Container);
         panel.Children.Add(userId.Container);
@@ -329,7 +337,6 @@ public sealed partial class V2RayPage : Page
 
         profile.Name = name.Box.Text.Trim();
         profile.Protocol = protocol.Box.Text.Trim().ToLowerInvariant();
-        profile.Mode = ModeFromIndex(mode.SelectedIndex);
         profile.Address = address.Box.Text.Trim();
         profile.Port = parsedPort;
         profile.UserId = userId.Box.Text.Trim();
@@ -369,8 +376,41 @@ public sealed partial class V2RayPage : Page
         var hasSelection = _selected is not null;
         ConnectButton.IsEnabled = hasSelection && !_xrayRunning;
         StopButton.IsEnabled = _xrayRunning;
+        PingButton.IsEnabled = hasSelection && !_pinging;
         EditButton.IsEnabled = hasSelection;
         DeleteButton.IsEnabled = hasSelection;
+    }
+
+    private async void OnPing(object sender, object e)
+    {
+        if (_pinging) return;
+        if (_selected is null)
+        {
+            StatusText.Text = "select a config first";
+            return;
+        }
+
+        _pinging = true;
+        PingButton.IsEnabled = false;
+        PingLabel.Text = "pinging…";
+        var target = _selected;
+        StatusText.Text = $"testing {target.Name}…";
+
+        try
+        {
+            var ms = await _vm.TestRealDelayAsync(target);
+            StatusText.Text = $"{target.Name}: {ms} ms";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"{target.Name}: ping failed ({ex.Message})";
+        }
+        finally
+        {
+            _pinging = false;
+            PingLabel.Text = "ping";
+            RenderActionState();
+        }
     }
 
     private static V2RayProfile Clone(V2RayProfile p) => new()

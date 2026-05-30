@@ -65,21 +65,23 @@
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
                      MinHeight="88"
-                     PlaceholderText="vless://, trojan://, vmess://, ss://, or raw config" />
+                     MaxHeight="180"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     PlaceholderText="one config per line — vless://, trojan://, vmess://, ss://, or raw config" />
             <Grid ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <ComboBox x:Name="ImportMode" Grid.Column="0" SelectedIndex="0" MinWidth="180">
+                <ComboBox x:Name="ModeSelector" Grid.Column="0" SelectedIndex="0" MinWidth="180" SelectionChanged="OnModeChanged">
                     <ComboBoxItem Content="Proxy Mode" />
                     <ComboBoxItem Content="Tunnel Mode" />
                     <ComboBoxItem Content="System Proxy" />
                 </ComboBox>
                 <TextBlock x:Name="StatusText"
                            Grid.Column="1"
-                           Text="Proxy Mode uses local HTTP/SOCKS. Tunnel Mode will use TUN + local DNS/FakeIP."
+                           Text="Mode applies to every config. Proxy = local HTTP/SOCKS · Tunnel = TUN routes all traffic · System Proxy = Windows proxy."
                            Style="{StaticResource TextCaption}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center" />
@@ -132,6 +134,12 @@
                         <TextBlock Text="new" />
                     </StackPanel>
                 </Button>
+                <Button x:Name="PingButton" Style="{StaticResource SecondaryButton}" Click="OnPing">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <SymbolIcon Symbol="Clock" Foreground="{StaticResource TextPrimary}" />
+                        <TextBlock x:Name="PingLabel" Text="ping" />
+                    </StackPanel>
+                </Button>
                 <Button x:Name="EditButton" Style="{StaticResource SecondaryButton}" Click="OnEdit">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <SymbolIcon Symbol="Edit" Foreground="{StaticResource TextPrimary}" />
@@ -172,7 +180,6 @@
                         </StackPanel>
                         <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
                             <TextBlock Text="{Binding Protocol}" Style="{StaticResource TextCaption}" HorizontalAlignment="Right" />
-                            <TextBlock Text="{Binding Mode}" Style="{StaticResource TextCaption}" HorizontalAlignment="Right" />
                         </StackPanel>
                     </Grid>
                 </DataTemplate>

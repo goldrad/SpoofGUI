@@ -17,6 +17,7 @@ internal static class Bootstrap
         services.AddSingleton<DatabaseConnection>();
         services.AddSingleton<SettingsRepository>();
         services.AddSingleton<ProxyPortSettings>();
+        services.AddSingleton<AppSettings>();
         services.AddSingleton<ProfileRepository>();
         services.AddSingleton<V2RayProfileRepository>();
         services.AddSingleton<DatabaseInitializer>();
@@ -25,11 +26,13 @@ internal static class Bootstrap
         services.AddSingleton<EngineClient>();
         services.AddSingleton<XrayCoreService>();
         services.AddSingleton<SingBoxTunnelService>();
+        services.AddSingleton<SniScannerService>();
 
         services.AddSingleton<MainPageViewModel>();
         services.AddTransient<SettingsPageViewModel>();
         services.AddTransient<ConfigPageViewModel>();
         services.AddTransient<V2RayPageViewModel>();
+        services.AddTransient<SniScannerPageViewModel>();
         services.AddTransient<ShellViewModel>();
 
         var sp = services.BuildServiceProvider();

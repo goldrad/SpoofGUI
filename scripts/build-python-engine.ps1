@@ -1,24 +1,54 @@
+param(
+    [ValidateSet("amd64", "x86")]
+    [string]$Arch = "amd64",
+    [string]$PythonExe = ""
+)
+
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $source = Join-Path $root "app\SpoofGUI\EngineSource\main.py"
+$requirements = Join-Path $root "app\SpoofGUI\EngineSource\requirements.txt"
 $dist = Join-Path $root "app\SpoofGUI\Engine"
-$work = Join-Path $root "build\pyinstaller-work"
-$spec = Join-Path $root "build\pyinstaller-spec"
+$work = Join-Path $root "build\pyinstaller-work-$Arch"
+$spec = Join-Path $root "build\pyinstaller-spec-$Arch"
 
-python -m pip install -r (Join-Path $root "app\SpoofGUI\EngineSource\requirements.txt")
+$pyExe = if ($PythonExe) { $PythonExe } else { "python" }
 
-$pydivertDir = python -c "import pydivert, os; print(os.path.join(os.path.dirname(pydivert.__file__), 'windivert_dll'))"
-$pydivertDir = $pydivertDir.Trim()
+function Invoke-Py {
+    param([string[]]$PyArgs)
+    & $pyExe @PyArgs
+    if ($LASTEXITCODE -ne 0) { throw "python failed: $($PyArgs -join ' ')" }
+}
 
-python -m PyInstaller `
-  --clean `
-  --onefile `
-  --console `
-  --add-binary "$pydivertDir\WinDivert64.dll;pydivert/windivert_dll" `
-  --add-binary "$pydivertDir\WinDivert64.sys;pydivert/windivert_dll" `
-  --name "SpoofGUI.SniSpoofEngine" `
-  --distpath $dist `
-  --workpath $work `
-  --specpath $spec `
-  $source
+function Read-Py {
+    param([string]$Code)
+    return (& $pyExe @("-c", $Code)).Trim()
+}
+
+$reportedBits = Read-Py "import struct;print(struct.calcsize('P')*8)"
+$expectedBits = if ($Arch -eq "x86") { "32" } else { "64" }
+if ($reportedBits -ne $expectedBits) {
+    throw "Active Python is $reportedBits-bit but $Arch needs $expectedBits-bit. Pass -PythonExe with a matching interpreter (a 32-bit Python for x86)."
+}
+
+Invoke-Py @("-m", "pip", "install", "pyinstaller")
+Invoke-Py @("-m", "pip", "install", "-r", $requirements)
+
+$pydivertDir = Read-Py "import pydivert, os; print(os.path.join(os.path.dirname(pydivert.__file__), 'windivert_dll'))"
+$winDivertFiles = Get-ChildItem -Path $pydivertDir -Include *.dll, *.sys -File -Recurse
+
+$addBinaryArgs = @()
+foreach ($file in $winDivertFiles) {
+    $addBinaryArgs += @("--add-binary", "$($file.FullName);pydivert/windivert_dll")
+}
+
+$pyInstallerArgs = @("-m", "PyInstaller", "--clean", "--onefile", "--console") +
+    $addBinaryArgs +
+    @("--name", "SpoofGUI.SniSpoofEngine", "--distpath", $dist, "--workpath", $work, "--specpath", $spec, $source)
+
+Invoke-Py $pyInstallerArgs
+
+foreach ($file in $winDivertFiles) {
+    Copy-Item -Force $file.FullName (Join-Path $dist $file.Name)
+}

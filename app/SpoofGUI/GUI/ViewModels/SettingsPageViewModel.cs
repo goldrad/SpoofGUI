@@ -16,17 +16,60 @@ public sealed class SettingsPageViewModel
 
     private readonly SettingsRepository _settings;
     private readonly ProxyPortSettings _ports;
+    private readonly AppSettings _app;
     private readonly ILogger<SettingsPageViewModel> _log;
 
-    public SettingsPageViewModel(SettingsRepository settings, ProxyPortSettings ports, ILogger<SettingsPageViewModel> log)
+    public SettingsPageViewModel(SettingsRepository settings, ProxyPortSettings ports, AppSettings app, ILogger<SettingsPageViewModel> log)
     {
         _settings = settings;
         _ports = ports;
+        _app = app;
         _log = log;
     }
 
     public int SocksPort => _ports.SocksPort;
     public int HttpPort => _ports.HttpPort;
+
+    public bool XrayAllowInsecure
+    {
+        get => _app.XrayAllowInsecure;
+        set => _app.XrayAllowInsecure = value;
+    }
+
+    public string XrayLogLevel
+    {
+        get => _app.XrayLogLevel;
+        set => _app.XrayLogLevel = value;
+    }
+
+    public string V2RayMode
+    {
+        get => _app.V2RayMode;
+        set => _app.V2RayMode = value;
+    }
+
+    public bool CheckUpdatesOnLaunch
+    {
+        get => _app.CheckUpdatesOnLaunch;
+        set => _app.CheckUpdatesOnLaunch = value;
+    }
+
+    public string DataFolder => Paths.AppDataDir;
+
+    public void OpenDataFolder()
+    {
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = Paths.AppDataDir,
+            UseShellExecute = true,
+        });
+    }
+
+    public string ResetPorts()
+    {
+        _ports.Set(ProxyPortSettings.DefaultSocksPort, ProxyPortSettings.DefaultHttpPort);
+        return $"reset: socks {ProxyPortSettings.DefaultSocksPort}, http {ProxyPortSettings.DefaultHttpPort}";
+    }
 
         public string? SavePorts(string socksText, string httpText)
     {

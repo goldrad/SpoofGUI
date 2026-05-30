@@ -1,0 +1,197 @@
+<Page
+    x:Class="SpoofGUI.GUI.Pages.SniScannerPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:conv="using:SpoofGUI.GUI.Converters"
+    NavigationCacheMode="Required"
+    Background="{StaticResource SurfaceBase}">
+
+    <Page.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#F4B656" />
+        <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#F6C172" />
+        <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#E0A641" />
+        <SolidColorBrush x:Key="ToggleSwitchStrokeOn" Color="#F4B656" />
+        <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="#15181E" />
+    </Page.Resources>
+
+    <Grid Padding="32,48,32,32" RowSpacing="20">
+        <Grid.ChildrenTransitions>
+            <TransitionCollection>
+                <EntranceThemeTransition FromVerticalOffset="16" IsStaggeringEnabled="True" />
+            </TransitionCollection>
+        </Grid.ChildrenTransitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Spacing="6">
+            <TextBlock Text="SNI Scanner" Style="{StaticResource TextCaption}" />
+            <TextBlock Text="find fake SNI targets" Style="{StaticResource TextDisplay}" />
+            <TextBlock Text="Resolve a list of hostnames and flag the ones fronted by Cloudflare — good candidates for a profile's Fake SNI."
+                       Style="{StaticResource TextBodyMuted}"
+                       MaxWidth="640" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Style="{StaticResource Card}">
+            <StackPanel Spacing="14">
+                <TextBox x:Name="DomainsBox"
+                         Style="{StaticResource FieldTextBox}"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         MinHeight="96"
+                         MaxHeight="200"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         PlaceholderText="one hostname per line&#x0a;www.cloudflare.com&#x0a;www.hcaptcha.com&#x0a;discord.com" />
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <ToggleSwitch x:Name="VerifyHttpToggle"
+                                      OnContent=""
+                                      OffContent=""
+                                      MinWidth="0"
+                                      VerticalAlignment="Center" />
+                        <TextBlock Text="verify HTTP"
+                                   Style="{StaticResource TextBody}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="10"
+                                VerticalAlignment="Center">
+                        <ProgressRing x:Name="ScanSpinner"
+                                      Width="18" Height="18"
+                                      Foreground="{StaticResource AccentBase}"
+                                      IsActive="False"
+                                      Visibility="Collapsed" />
+                        <TextBlock x:Name="ScanStatus"
+                                   Style="{StaticResource TextCaption}"
+                                   Foreground="{StaticResource TextSecondary}"
+                                   VerticalAlignment="Center"
+                                   Text="" />
+                    </StackPanel>
+
+                    <Button x:Name="ClearButton"
+                            Grid.Column="2"
+                            Style="{StaticResource SecondaryButton}"
+                            Click="OnClear">
+                        <TextBlock Text="clear" />
+                    </Button>
+                    <Button x:Name="ScanButton"
+                            Grid.Column="3"
+                            Style="{StaticResource PrimaryButton}"
+                            Click="OnScan">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <SymbolIcon Symbol="Find" Foreground="#15181E" />
+                            <TextBlock x:Name="ScanButtonLabel" Text="scan" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0"
+                       Text="results"
+                       Style="{StaticResource TextH2}"
+                       VerticalAlignment="Center" />
+            <TextBlock x:Name="ResultSummary"
+                       Grid.Column="1"
+                       Style="{StaticResource TextCaption}"
+                       VerticalAlignment="Center"
+                       Text="" />
+        </Grid>
+
+        <ListView x:Name="ResultsList"
+                  Grid.Row="3"
+                  SelectionMode="None"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListView.ItemContainerTransitions>
+                <TransitionCollection>
+                    <AddDeleteThemeTransition />
+                    <ContentThemeTransition />
+                </TransitionCollection>
+            </ListView.ItemContainerTransitions>
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Margin" Value="0,0,0,8" />
+                    <Setter Property="MinHeight" Value="0" />
+                    <Setter Property="CornerRadius" Value="8" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Border CornerRadius="8"
+                            Padding="14,12"
+                            Background="{StaticResource SurfaceRaised}"
+                            BorderBrush="{StaticResource BorderSubtle}"
+                            BorderThickness="1">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0"
+                                    Width="3"
+                                    CornerRadius="2"
+                                    Background="{StaticResource AccentBase}"
+                                    Visibility="{Binding UsableAsSni, Converter={StaticResource BoolToVis}}" />
+
+                            <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Domain}"
+                                           Style="{StaticResource TextBody}"
+                                           FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding Detail}"
+                                           Style="{StaticResource TextMono}"
+                                           FontSize="12"
+                                           Foreground="{StaticResource TextSecondary}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+
+                            <Border Grid.Column="2"
+                                    VerticalAlignment="Center"
+                                    Background="{StaticResource AccentBase}"
+                                    CornerRadius="{StaticResource RadiusSm}"
+                                    Padding="10,3"
+                                    Visibility="{Binding UsableAsSni, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="usable"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           Foreground="#15181E" />
+                            </Border>
+
+                            <Button Grid.Column="3"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Padding="12,6"
+                                    VerticalAlignment="Center"
+                                    Click="OnUseDomain">
+                                <TextBlock Text="use" />
+                            </Button>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</Page>

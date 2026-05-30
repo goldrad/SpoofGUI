@@ -12,12 +12,14 @@ SpoofGUI is not a VPN. The normal workflow:
 
 1. Launch SpoofGUI. It relaunches itself as administrator automatically (UAC prompt).
 2. Open the Main page and press **start** to spawn the Python SNI-Spoof engine bound to `127.0.0.1:40443`.
-3. Open the V2Ray page, import a config (VLESS / VMess / Trojan / Shadowsocks / raw).
-4. Pick a mode for that profile:
-   - **Proxy Mode** — user points clients at SOCKS `127.0.0.1:20882` / HTTP `127.0.0.1:20883` manually (ports configurable in Settings). Runs `xray.exe`.
-   - **Tunnel Mode** — runs `sing-box.exe` as a full core: a tun (wintun) inbound with `auto_route` + `strict_route` captures all OS traffic, and the profile's proxy outbound carries it. `auto_detect_interface` keeps the connection to the proxy server off the tunnel (no loop). sing-box installs and tears down its own routes; on disconnect it is stopped gracefully.
+3. (Optional) Open the SNI Scanner page, scan a list of hostnames, and create a Configs profile from a Cloudflare-backed result. On Configs, keep up to 10 SNI profiles and pick the active one.
+4. Open the V2Ray page, import one or many configs at once (VLESS / VMess / Trojan / Shadowsocks / raw).
+5. Pick the **connection mode** — it is global and applies to every config:
+   - **Proxy** — user points clients at SOCKS `127.0.0.1:20882` / HTTP `127.0.0.1:20883` manually (ports configurable in Settings). Runs `xray.exe`.
+   - **Tunnel** — runs `sing-box.exe` as a full core: a tun (wintun) inbound with `auto_route` + `strict_route` captures all OS traffic, and the profile's proxy outbound carries it. `auto_detect_interface` keeps the connection to the proxy server off the tunnel (no loop). sing-box installs and tears down its own routes; on disconnect it is stopped gracefully.
    - **System Proxy** — runs `xray.exe` and flips the Windows Internet Settings to route the whole system through the HTTP inbound; on stop, it reverts.
-5. Press **connect**. Proxy / System Proxy start `xray.exe`; Tunnel starts `sing-box.exe`.
+6. (Optional) Press **ping** to measure the real delay of the selected config (HTTP request routed through it).
+7. Press **connect**. Proxy / System Proxy start `xray.exe`; Tunnel starts `sing-box.exe`.
 
 ## Users
 
@@ -28,10 +30,12 @@ The app is designed for constrained networks where reliability and clarity matte
 ## Core Jobs
 
 - Start and stop the SNI-Spoofing listener; show live connection count.
-- Edit the active SNI profile: listen host, listen port, connect IP, connect port, fake SNI.
-- Import, edit, delete, and run VLESS / VMess / Trojan / Shadowsocks profiles through Xray (Proxy / System Proxy) or sing-box (Tunnel).
-- Switch a profile between Proxy / Tunnel / System Proxy mode.
-- Configure the local SOCKS / HTTP proxy ports.
+- Manage up to 10 SNI profiles (listen host/port, connect IP, connect port, fake SNI); one is active at a time.
+- Bulk-scan hostnames to find Cloudflare-backed Fake SNI targets, and create a profile from a result.
+- Import (one or many at once), edit, delete, and run VLESS / VMess / Trojan / Shadowsocks profiles through Xray (Proxy / System Proxy) or sing-box (Tunnel).
+- Set one global connection mode (Proxy / Tunnel / System Proxy) applied to every config.
+- Test the real delay of a config (HTTP request routed through it).
+- Configure the local SOCKS / HTTP proxy ports, allow-insecure-TLS, and xray log level.
 - Show real-time upload / download rate and total bytes on the V2Ray page.
 - Show runtime logs and make them easy to copy.
 - Package the tool so end users do not need to install Python, .NET, Xray, or Windows App Runtime.

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import socket
 import sys
@@ -21,6 +22,29 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+
+# SpoofGUI fork patch: on the Windows proactor event loop, tearing down a relay
+# whose peer still has a pending overlapped recv makes CancelIoEx fail and asyncio
+# logs "Cancelling an overlapped future failed" with a full traceback for *every*
+# closed connection (WinError 6/64/121, ConnectionResetError). These are benign
+# connection-churn errors, not engine faults, so swallow them to keep the log
+# usable; real problems still go through the default handler.
+_BENIGN_WINERRORS = {6, 64, 121, 10053, 10054, 10038}
+
+
+def _quiet_loop_exception_handler(loop, context):
+    message = context.get("message", "")
+    exception = context.get("exception")
+    if "overlapped" in message.lower():
+        return
+    if isinstance(exception, (ConnectionResetError, ConnectionAbortedError)):
+        return
+    if isinstance(exception, OSError) and getattr(exception, "winerror", None) in _BENIGN_WINERRORS:
+        return
+    loop.default_exception_handler(context)
+
+
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
 
 def get_exe_dir():
@@ -54,6 +78,20 @@ BYPASS_METHOD = "wrong_seq"
 fake_injective_connections: dict[tuple, FakeInjectiveConnection] = {}
 
 
+def _safe_close(sock: socket.socket):
+    try:
+        sock.close()
+    except Exception:
+        pass
+
+
+def _safe_cancel(task: asyncio.Task):
+    try:
+        task.cancel()
+    except Exception:
+        pass
+
+
 async def relay_main_loop(sock_1: socket.socket, sock_2: socket.socket, peer_task: asyncio.Task,
                           first_prefix_data: bytes):
     try:
@@ -70,13 +108,22 @@ async def relay_main_loop(sock_1: socket.socket, sock_2: socket.socket, peer_tas
                 if sent_len != len(data):
                     raise ValueError("incomplete send")
             except Exception:
-                sock_1.close()
-                sock_2.close()
-                peer_task.cancel()
+                _safe_close(sock_1)
+                _safe_close(sock_2)
+                _safe_cancel(peer_task)
                 return
     except Exception:
-        traceback.print_exc()
-        sys.exit("relay main loop error!")
+        # SpoofGUI fork patch: on Windows the proactor event loop can raise a
+        # ConnectionResetError ([WinError 64]) from inside _cancel_overlapped while
+        # the inner handler is already tearing a relay down. Upstream calls sys.exit
+        # here, which kills the whole engine on a single dropped connection — this is
+        # the root cause of issues #2 and #3 (one reset stops all traffic and the
+        # xray pipe closes with "closed pipe"). Tear down only this relay pair and
+        # keep serving every other client.
+        _safe_close(sock_1)
+        _safe_close(sock_2)
+        _safe_cancel(peer_task)
+        return
 
 
 async def handle(incoming_sock: socket.socket, incoming_remote_addr):
@@ -201,8 +248,10 @@ async def handle(incoming_sock: socket.socket, incoming_remote_addr):
 
 
     except Exception:
+        # SpoofGUI fork patch: a single failed connection must never terminate the
+        # engine. Log and return so the listener keeps accepting new clients.
         traceback.print_exc()
-        sys.exit("handle should not raise exception")
+        return
 
 
 async def main():
@@ -216,6 +265,7 @@ async def main():
     mother_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
     mother_sock.listen()
     loop = asyncio.get_running_loop()
+    loop.set_exception_handler(_quiet_loop_exception_handler)
     while True:
         incoming_sock, addr = await loop.sock_accept(mother_sock)
         incoming_sock.setblocking(False)

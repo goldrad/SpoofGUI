@@ -10,6 +10,9 @@ public sealed class SpoofProfile
     public int ConnectPort { get; set; } = 443;
     public string FakeSni { get; set; } = "";
     public bool IsActive { get; set; }
+
+    public string Target => $"{ConnectIp}:{ConnectPort}";
+    public string ListenSummary => $"{ListenHost}:{ListenPort}";
 }
 
 public sealed class EngineStatus

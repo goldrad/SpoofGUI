@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
@@ -15,17 +17,19 @@ public sealed class XrayCoreService : IDisposable
     private readonly ILogger<XrayCoreService> _log;
     private readonly ProfileRepository _spoofProfiles;
     private readonly ProxyPortSettings _ports;
+    private readonly AppSettings _appSettings;
     private Process? _proc;
     private bool _isRunning;
 
     private int SocksPort => _ports.SocksPort;
     private int HttpPort => _ports.HttpPort;
 
-    public XrayCoreService(ILogger<XrayCoreService> log, ProfileRepository spoofProfiles, ProxyPortSettings ports)
+    public XrayCoreService(ILogger<XrayCoreService> log, ProfileRepository spoofProfiles, ProxyPortSettings ports, AppSettings appSettings)
     {
         _log = log;
         _spoofProfiles = spoofProfiles;
         _ports = ports;
+        _appSettings = appSettings;
     }
 
     public bool IsRunning => _proc is { HasExited: false } || _isRunning;
@@ -113,6 +117,114 @@ public sealed class XrayCoreService : IDisposable
 
     public void Dispose() => StopAsync().GetAwaiter().GetResult();
 
+    public async Task<long> TestRealDelayAsync(V2RayProfile profile, CancellationToken ct = default)
+    {
+        if (!File.Exists(Paths.XrayExePath))
+            throw new FileNotFoundException($"xray not found: {Paths.XrayExePath}");
+
+        var port = FreeLoopbackPort();
+        var config = BuildPingConfig(profile, port).ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        var configPath = Path.Combine(Path.GetTempPath(), $"spoofgui-ping-{port}.json");
+        await File.WriteAllTextAsync(configPath, config, ct);
+
+        Process? proc = null;
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = Paths.XrayExePath,
+                Arguments = $"run -c \"{configPath}\"",
+                WorkingDirectory = Path.GetDirectoryName(Paths.XrayExePath) ?? AppContext.BaseDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+            };
+            proc = Process.Start(psi) ?? throw new InvalidOperationException("failed to start xray for delay test");
+            proc.OutputDataReceived += (_, _) => { };
+            proc.ErrorDataReceived += (_, _) => { };
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+
+            await WaitForLoopbackPortAsync(port, TimeSpan.FromSeconds(5), ct);
+
+            using var handler = new HttpClientHandler
+            {
+                Proxy = new WebProxy($"socks5://127.0.0.1:{port}"),
+                UseProxy = true,
+            };
+            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+
+            var stopwatch = Stopwatch.StartNew();
+            using var response = await http.GetAsync("http://cp.cloudflare.com/generate_204", HttpCompletionOption.ResponseHeadersRead, ct);
+            stopwatch.Stop();
+
+            if ((int)response.StatusCode is not (204 or 200))
+                throw new InvalidOperationException($"unexpected status {(int)response.StatusCode}");
+
+            return stopwatch.ElapsedMilliseconds;
+        }
+        finally
+        {
+            try { if (proc is { HasExited: false }) proc.Kill(entireProcessTree: true); } catch { }
+            proc?.Dispose();
+            try { File.Delete(configPath); } catch { }
+        }
+    }
+
+    private static int FreeLoopbackPort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+
+    private static async Task WaitForLoopbackPortAsync(int port, TimeSpan timeout, CancellationToken ct)
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (elapsed.Elapsed < timeout)
+        {
+            try
+            {
+                using var probe = new TcpClient();
+                await probe.ConnectAsync(IPAddress.Loopback, port, ct);
+                return;
+            }
+            catch
+            {
+                await Task.Delay(150, ct);
+            }
+        }
+
+        throw new TimeoutException("xray did not open the test port in time");
+    }
+
+    private JsonObject BuildPingConfig(V2RayProfile profile, int port)
+    {
+        return new JsonObject
+        {
+            ["log"] = new JsonObject { ["loglevel"] = "none" },
+            ["inbounds"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["tag"] = "socks-in",
+                    ["listen"] = "127.0.0.1",
+                    ["port"] = port,
+                    ["protocol"] = "socks",
+                    ["settings"] = new JsonObject { ["udp"] = false, ["auth"] = "noauth" },
+                },
+            },
+            ["outbounds"] = new JsonArray
+            {
+                BuildOutbound(profile),
+                new JsonObject { ["protocol"] = "freedom", ["tag"] = "direct" },
+            },
+        };
+    }
+
     private static async Task<string> RunCaptureAsync(string exe, IReadOnlyList<string> args)
     {
         var psi = new ProcessStartInfo
@@ -144,7 +256,7 @@ public sealed class XrayCoreService : IDisposable
     {
         return new JsonObject
         {
-            ["log"] = new JsonObject { ["loglevel"] = "warning" },
+            ["log"] = new JsonObject { ["loglevel"] = _appSettings.XrayLogLevel },
             ["inbounds"] = new JsonArray
             {
                 new JsonObject
@@ -283,7 +395,7 @@ public sealed class XrayCoreService : IDisposable
 
         if (security == "tls")
         {
-            stream["tlsSettings"] = new JsonObject { ["serverName"] = serverName, ["allowInsecure"] = false };
+            stream["tlsSettings"] = new JsonObject { ["serverName"] = serverName, ["allowInsecure"] = _appSettings.XrayAllowInsecure };
         }
         else if (security == "reality")
         {
